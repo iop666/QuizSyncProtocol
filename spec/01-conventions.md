@@ -9,8 +9,8 @@
 ### 1.1 命名
 - **MUST** JSON 字段名一律 `snake_case` 全小写：`image_hash`、`session_id`、`retry_after_seconds`、`field_clocks_json`、`active_collection_id`。
 - **MUST** 字段名区分大小写、精确匹配；不提供 `imageHash` 一类驼峰别名。
-- **MUST** 时间戳（毫秒 epoch）字段名以 `_at` 结尾：`created_at`、`updated_at`、`deleted_at`、`paired_at`、`last_seen_at`、`revoked_at`。唯一例外是 WS 心跳的 `ts`（现状）。
-- **MUST** 时长为毫秒的字段以 `_ms` 结尾（`latency_ms`），**MUST NOT** 写成 `*_at`。
+- **MUST** 时间戳（毫秒 epoch）字段名以 `_at` 结尾：`created_at`、`updated_at`、`deleted_at`、`paired_at`、`last_seen_at`、`revoked_at` 等。唯一例外是 WS 心跳的 `ts`（现状）。
+- **MUST** 时长字段按单位给后缀：毫秒用 `_ms`（`latency_ms`）、秒用 `_seconds`（`retry_after_seconds`）；**MUST NOT** 把时长写成 `*_at`。
 - **MUST** 列表字段用复数名：`ops`、`questions`、`collections`、`devices`、`sessions`、`session_images`、`images`、`image_hashes`、`capabilities`。
 - **MUST** HTTP 路径全小写、`/` 分层，前缀 `/api/v1/`；动作段放在资源 id 之后（`/api/v1/sessions/{id}/reanalyze`、`/api/v1/collections/{id}/select`）。
 - **MUST** 错误 `code` 为全小写 `snake_case`：`invalid_request`、`unauthorized`、`revoked`、`not_found`、`invalid_code`、`code_expired`、`rate_limited`、`payload_too_large`、`version_mismatch`、`no_active_collection`、`queue_full`、`too_many_pages`。
@@ -24,7 +24,8 @@
 - **MUST** 服务端不得依据客户端给的时间戳拒绝请求（现状：`created_at` 被忽略或原样入库）。
 
 ### 1.3 标识符
-- **MUST** `device_id`、`task_id`、`op_id`、`session_id`、`collection_id`、`session_image_id`、`entity_id` 为 UUIDv4 小写十六进制、带连字符（8-4-4-4-12）。
+- **MUST** `device_id`（含配对响应里的 `server_device_id`）、`task_id`、`op_id`、`session_id`、`question_id`、`collection_id`、`session_image_id` 为 UUIDv4 小写十六进制、带连字符（8-4-4-4-12）。
+- **MUST** `entity_id` 形态随 `entity` 而定：会话 / 题目 / 合集 / 页图片 / 设备是 UUIDv4，`image` 是 `image_hash`（sha256 十六进制），`snapshot` 是固定串 `"global"`。
 - **MUST** `token` 为 32 随机字节的 64 位小写十六进制；服务端只保存 `sha256(token)` 的十六进制，明文 token 只在配对响应里出现一次。
 - **MUST** `image_hash` = sha256(压缩后 JPEG 字节) 的小写十六进制（64 位），内容寻址：同字节必得同 hash，服务端按 hash 去重并回 `existed`。
 - **MUST** `GET /api/v1/images/{hash}` 只接受 `^[0-9a-f]{64}$`；不合规一律 404 `not_found`（现状：hash 会被当成文件名，必须挡住路径拼接）。
@@ -39,8 +40,8 @@
 - **SHOULD** 同主版本内允许**纯加法**字段；老实现忽略它必须仍然正确（例如任务状态探测响应里的 `collections`、`ops_lamport`）。
 
 ### 1.5 编码与内容类型
-- **MUST** 请求体与响应体是 UTF-8 JSON；响应头 `Content-Type: application/json; charset=utf-8`（成功与错误一致）。
-- **MUST** 图片上传用 `multipart/form-data`，字段名固定 `file`；图片下载的响应体是 `image/jpeg` 二进制，不是 JSON。
+- **MUST** 除图片上传（`multipart/form-data`）与图片下载（`image/jpeg` 二进制）外，请求体与响应体都是 UTF-8 JSON；响应头 `Content-Type: application/json; charset=utf-8`（成功与错误一致）。
+- **MUST** 图片上传的字段名固定 `file`；图片下载的响应体是原始字节，不是 JSON 包装。
 - **MUST** 服务端按 UTF-8 解码请求体（现状：忽略 `Content-Type` 里声明的 charset）；非 UTF-8 字节 = 400 `invalid_request`。
 - **MUST** 解析 JSON 的端点上，body 不是合法 JSON 对象（含空体、数组、非法 UTF-8）一律 400 `invalid_request`，不得 500。
 - **MAY** 响应里 JSON 对象的键序、空白与缩进不进契约。
@@ -80,7 +81,7 @@
 | 路径前缀 `/api/v1/…`、JSON 字段名 snake_case | 两个文件全部步骤的 `expect.json`（间接） |
 | `image_hash` = 64 位小写十六进制、内容寻址 | `images.ndjson` 2（`^[0-9a-f]{64}$`）、4、5（`body_sha256` = `$hash`） |
 | `token` = 64 位小写十六进制 | `auth.ndjson` 5（`^[0-9a-f]{64}$`） |
-| 错误体不含未知键以外的分支（`code` 为准） | `auth.ndjson` 2、3（同码不同 message） |
+| 同状态码下 `code` 是唯一分支依据（`message` 可变） | `auth.ndjson` 2、3（缺 token 与 token 认不出同为 401 `unauthorized`，只有 message 不同） |
 | 未知字段被忽略 | **缺口**：向量格式没有「插入未知字段仍须成功」的操作 |
 | 大小写敏感（路径 / 字段名 / `Bearer` 拼写） | **缺口** |
 | 时间戳为毫秒 `*_at` | **缺口**（`tasks.ndjson`、`sync.ndjson` 待写） |
@@ -92,5 +93,5 @@
 | 错误体统一 `{code, message, retry_after_seconds}`，配对失败表列出 `409 already_paired` | 409 的 body 没有 `code`/`message`，只有 `already_paired: true` 与新 token | 规范写明这是**唯一**的非错误体 4xx；`already_paired` 是布尔标志，不是 `code` |
 | 时间戳字段名统一 `*_at` | WS 心跳用 `ts` | 规范把 `ts` 保留为唯一例外并标注 |
 | 配对请求字段表含 `app_version` | 校验只要求 `code`/`device_id`/`device_name`/`platform` 非空；缺 `app_version` 照样成功（值记为空串） | 规范把 `app_version` 标为 SHOULD 上报、缺失不拒绝 |
-| （未提）布尔与整数的混用 | 同一个 `cached`：会话实体 `0/1`，任务响应布尔 | 规范要求解析端两者都收；v2 目标统一为布尔 |
-| （未提）同一个值在不同载荷里字段名不同 | 上传响应用 `image_hash`，图片实体用 `hash` | 规范按现状分别写明；v2 目标再谈统一 |
+| （未提）布尔与整数的混用 | 同一个 `cached`：会话实体 `0/1`，任务响应布尔 | 规范要求解析端**两者都收**；统一成哪种形态留给 v2 决定 |
+| （未提）同一个值在不同载荷里字段名不同 | 上传响应用 `image_hash`，图片实体用 `hash` | 规范按现状分别写明；是否统一留给 v2 决定 |
