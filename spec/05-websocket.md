@@ -42,7 +42,7 @@
 - **MUST** 广播语义：`task_update` / `task_result` / `task_failed` / `collection_changed` / `device_revoked` 一律发给**当时所有已连接客户端**；没有订阅、没有按设备过滤、也没有按任务定向。
 - **MUST** `task_result.session` = 会话全字段 + `image_hashes`(str[]，页序权威) + `image_count`(int) + `questions`(对象数组)，与 `GET /api/v1/tasks/active` 的 `session` **同构**（客户端 **SHOULD** 复用同一套落地逻辑，见 `04-http-api.md` 1.4.1）；`source_device` 恒在，客户端靠它区分「自己发起的」与「主机本机发起的」（后者不自动跳结果页）。
 - **MUST** `task_update.image_count` 是本次识别的页数；上报值 ≤ 0 时服务端用会话页序的条数补齐（会话不存在则保持 0）。客户端 **SHOULD** 优先用消息里的值，取不到再查本地库。
-- **MUST** 客户端只在 `device_revoked.device_id` 等于自己时清本地配对。现状：客户端的连接层比对了 id，但**消息落地层不比对 id**，收到别人的吊销也会清自己的配对（记入 §7）。
+- **MUST**（**v2 变更**）客户端只在 `device_revoked.device_id` 等于自己时清本地配对。**v1 现状**：连接层比对了 id 才断开，但**消息落地层不比对 id**，收到别人的吊销也会清掉自己的配对（记入 §7）。
 - **MUST NOT** 依赖服务端 → 客户端的 `ops` 事件：**实现未发出**（事件名只在旧契约里，代码里没有任何一处构造它；客户端解析层保留了该分支，是死分支）。
 
 ### 2.2 客户端 → 服务端
@@ -100,8 +100,8 @@
 
 ### 6.1 现状：WS 尚无向量
 
-- `conformance/vectors/` 目录里现有 **4 组**（`auth.ndjson` 23 步 / `images.ndjson` 14 步 / `tasks.ndjson` 15 步 / `sync.ndjson` 30 步），**全部是 HTTP 步骤**：没有任何一步打 `/ws`，也没有 WS 操作类型。
-- `conformance/README.md` 的组织表已给 `vectors/websocket.ndjson` 占位并标注「待写」（回放器的 `ws` 操作 `connect` / `expect` / `send` / `close` 均未实现）；该表里列出的 `vectors/errors.ndjson` 在目录里也**不存在**——表比目录超前，**MUST NOT** 据表认为 WS 已有覆盖。
+- `conformance/vectors/` 目录里现有 **5 组**（`auth.ndjson` 23 步 / `images.ndjson` 14 步 / `tasks.ndjson` 15 步 / `sync.ndjson` 30 步 / `errors.ndjson` 14 步），**全部是 HTTP 步骤**：没有任何一步打 `/ws`，也没有 WS 操作类型。
+- `conformance/README.md` 的组织表已给 `vectors/websocket.ndjson` 占位并标注「待写」（回放器的 `ws` 操作 `connect` / `expect` / `send` / `close` 均未实现）；该文件在目录里也**不存在**，所以 **MUST NOT** 据表认为 WS 已有覆盖。
 - 因此本文全部条目目前**只靠实现与集成测试保证**，没有语言无关的裁判。
 
 ### 6.2 v2 应当补的 WS 向量（SHOULD）
