@@ -85,8 +85,10 @@
 | `auth.ndjson` 22–23 | 1.4（兼容性由版本头承担：主版本不同 `426`；不带版本头放行） |
 | `images.ndjson` 2–12 | 1.2 的 `image_fetch` 现状语义（内容寻址去重、`413`、`429`、`404`） |
 | `images.ndjson` 13–14 | 1.2（能力可用但**仍需 token**：鉴权与能力声明是两件事） |
+| `tasks.ndjson` 4、15 | 2 的数值（`multipage` 的 6 页上限 → `400 too_many_pages`；队列深度 20 → `429 queue_full`）——即「能力名不表达上限」这一现状的实证 |
+| `errors.ndjson` 2–4 | 2 的版本行（只比主版本；不可解析的版本头也 `426`） |
 
-**覆盖缺口（v1）**：`ai_configured = false` 的 `/info` 与「缺 Key → 任务失败 + `error_code = ai_auth`」**没有任何向量**（1.3 的现状行为完全靠实现与人工验证）；能力数组「顺序无关」只有标题声明、没有负向向量；`multipage` 的 6 页上限没有能力维度的向量；`collections` 能力的门禁（`active_collection_id` 判空）没有 `/info` 维度的向量；`capabilities` 的「常量性」（改配置后不变）也没有向量。v2 **SHOULD** 至少新增两条：`ai_configured=false` 下的 `/info`；未配 AI 时创建任务 → 任务 `failed`/`ai_auth`（或 v2 的前置 `503`）。
+**覆盖缺口（v1）**：`ai_configured = false` 的 `/info` 与「缺 Key → 任务失败 + `error_code = ai_auth`」**没有任何向量**（1.3 的现状行为完全靠实现与人工验证）；能力数组「顺序无关」只有标题声明、没有负向向量；`multipage` 的 6 页上限只在任务维度被覆盖（见上表的 `tasks.ndjson`），没有能力维度的向量；`collections` 能力的门禁（`active_collection_id` 判空）没有 `/info` 维度的向量；`capabilities` 的「常量性」（改配置后不变）也没有向量。v2 **SHOULD** 至少新增两条：`ai_configured=false` 下的 `/info`；未配 AI 时创建任务 → 任务 `failed`/`ai_auth`（或 v2 的前置 `503`）。
 
 向量侧的一条前提（现状）：`auth.ndjson` 第 1 步断言 `ai_configured: true`，因此向量执行器**必须**能把主机的 AI 配置注入为「已配置」；要跑 `ai_configured = false` 的向量需要另一套夹具（现状没有这套夹具，这也是缺口的一部分）。
 

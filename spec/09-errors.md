@@ -72,7 +72,7 @@
 | `version_mismatch` | 426 | 请求带 `X-QS-Client-Version`，且其主版本与主机主版本不同 | 不可重试（需升级一端） | 无 | 显示服务端 `message`（内含双方版本） |
 | `invalid_code` | 401 | 配对码与主机当前有效码不匹配 | 可重试（核对后）；**计入失败数** | 无 | 「配对码错误，请核对 Windows 端显示的 6 位数字」 |
 | `code_expired` | 401 | 配对码已过期 | 可重试（主机刷新码后）；**计入失败数** | 有，语义见 §5 | 「配对码已过期，请在 Windows 端点『刷新』后重试」 |
-| `rate_limited` | 429 | 三种触发：配对已锁定 / 配对尝试过于频繁 / 图片上传过于频繁 | 可重试（等 `retry_after_seconds`） | 有（三种都带） | 见 §4 |
+| `rate_limited` | 429 | 三种触发：配对已锁定 / 配对尝试过于频繁 / 图片上传过于频繁 | 可重试（等 `retry_after_seconds`） | 有（三种都带） | 配对 429 →「尝试过于频繁，N 秒后再试」（N = `retry_after_seconds`，缺省 60）；上传 429 → 显示服务端 `message` 原文 |
 | `invalid_request` | 400 | 请求体或字段/参数不合法 | 不可重试 | 无 | 显示服务端 `message` 原文 |
 | `too_many_pages` | 400 | 单个任务的页数超过硬上限 6 | 不可重试（需减少页数） | 无 | 显示服务端 `message` 原文 |
 | `no_active_collection` | 409 | 任务没落到任何合集（主机未选，或指定的合集在主机上不存在） | 视触发：用户选好合集后可重试 | 无 | **固定文案**「请先在电脑上选择任务合集」（**不**显示服务端 `message`） |
@@ -121,13 +121,48 @@
 | `invalid_request`（空文件） | `images.ndjson` 9 |
 | `payload_too_large` | `images.ndjson` 10 |
 | `not_found`（不存在 / 形态非法 / 目录穿越） | `images.ndjson` 6、7、8 |
-| `queue_full`、`too_many_pages`、`no_active_collection` | **缺口** |
+| `queue_full` | `tasks.ndjson` 15 |
+| `too_many_pages` | `tasks.ndjson` 4 |
+| `no_active_collection`（两种 message） | `tasks.ndjson` 7；auth/快照路径另见 `sync.ndjson` |
 | `rate_limited` 的「失败次数过多已锁定」分支 | **缺口**（向量未走满 10 次失败） |
-| `invalid_request` 的其余 message 分支 | **缺口**（仅空文件一条） |
+| `invalid_request` 的各 message 分支 | `errors.ndjson` 7、8、9、10；`images.ndjson` 9 |
 | `internal` 兜底路径 | **缺口** |
+| 路由不存在（非协议 JSON 错误体） | `errors.ndjson` 13 |
+| 响应里不得出现令牌哈希 | `errors.ndjson` 12 |
 | 上传限流先于体积判定（被拒也计数） | `images.ndjson` 11（含 1 次超限 + 1 次空文件后额度用满） |
 
-## 7. 文档-实现分叉
+## 7. 两套 Host 实现与客户端本地码（现状差异，v2 必须收敛）
+
+### 7.1 两套 v1 Host 的错误码差异
+
+现状有**两个** Host 实现：Windows 客户端内嵌的、以及独立命令行服务端。协议子集相同，独立实现另有若干码与一处映射不同（下表为实测差异，不含上表已列的共同码）：
+
+| 场景 | 内嵌 Host | 独立服务端 | 处置 |
+|---|---|---|---|
+| 停止服务 / 本机命令行端点被非本机调用 | 无该端点 | `403 forbidden`（`只允许本机停止服务` / `只允许本机使用命令行`） | v2：这两类端点**不属于 LAN 协议**，规范里划到「本机控制面」，不列为协议码 |
+| 本机控制令牌缺失或错误 | 无 | `403 forbidden`（`缺少或错误的控制令牌`） | 同上 |
+| 该实例没有开放本机命令行 | 无 | `501 unavailable` | 同上 |
+| 本机命令行请求体形态不对 | 无 | `400 bad_request`（`请求体需要是 {"command": "..."}`） | 同上（注意：与 `invalid_request` 是两个码） |
+| 重新识别时原图已不在主机上 | `400 invalid_request`（`图片文件缺失`） | `409 invalid_request`（`原图已不在电脑上，无法重新识别`） | **v2 必须统一**（同场景同码同状态）；v1 客户端必须两种都认 |
+| 队列满的 message | `主机任务队列已满（N），请稍后重试` | `已有识别正在进行，请稍后重试` | message 非契约，客户端只按 `code` 分支 |
+
+**MUST**：客户端分支只看 `code`（不看 `message`、不看具体文案）。**MUST**：v1 期间的客户端必须同时接受上表两种取值 —— 现状 Android 端就是这么做的。
+
+### 7.2 客户端本地合成的码（不在线路上）
+
+客户端在传输层自己合成下列取值，服务端永远不会发送：
+
+| 取值 | 何时产生 |
+|---|---|
+| `timeout` | 连接 / 读超时 |
+| `network_error` | 连不上（主机没运行、不在同一网段、证书问题） |
+| `cancelled` | 调用方主动取消 |
+
+WS 侧的 `auth_failed` 同样是**客户端本地**事件（主机从不发送）。
+
+**MUST**：解析响应时若 `code` 缺失，按 `internal` 兜底，不得把「没有 code」当成成功。
+
+## 8. 文档-实现分叉
 
 | 现有文档怎么写 | 实现是什么 | 处置 |
 |---|---|---|

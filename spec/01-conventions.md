@@ -24,12 +24,14 @@
 - **MUST** 服务端不得依据客户端给的时间戳拒绝请求（现状：`created_at` 被忽略或原样入库）。
 
 ### 1.3 标识符
-- **MUST** `device_id`（含配对响应里的 `server_device_id`）、`task_id`、`op_id`、`session_id`、`question_id`、`collection_id`、`session_image_id` 为 UUIDv4 小写十六进制、带连字符（8-4-4-4-12）。
+- **MUST** `task_id`、`op_id`、`session_id`、`question_id`、`collection_id`、`session_image_id` 为 UUIDv4 小写十六进制、带连字符（8-4-4-4-12）。
+- **v1 现状（必须照做，v2 要改）**：`device_id` 与配对响应里的 `server_device_id` 是**固定字面量**（Windows 端 `windows-local`、Android 端 `android-local`），不是每安装生成的 UUID —— 这正是「同一时间只支持一台安卓」的根源（第二台手机配对会顶掉第一台）。**v2 变更**：改为每安装生成一次的 UUID。
 - **MUST** `entity_id` 形态随 `entity` 而定：会话 / 题目 / 合集 / 页图片 / 设备是 UUIDv4，`image` 是 `image_hash`（sha256 十六进制），`snapshot` 是固定串 `"global"`。
 - **MUST** `token` 为 32 随机字节的 64 位小写十六进制；服务端只保存 `sha256(token)` 的十六进制，明文 token 只在配对响应里出现一次。
 - **MUST** `image_hash` = sha256(压缩后 JPEG 字节) 的小写十六进制（64 位），内容寻址：同字节必得同 hash，服务端按 hash 去重并回 `existed`。
 - **MUST** `GET /api/v1/images/{hash}` 只接受 `^[0-9a-f]{64}$`；不合规一律 404 `not_found`（现状：hash 会被当成文件名，必须挡住路径拼接）。
 - **SHOULD** 客户端重试时**保持** `task_id`、`op_id` 不变（它们就是幂等键）。
+- **MUST NOT** 校验方仅因 id 不是 UUIDv4 形态就拒绝请求（现状：服务端不校验 id 形态，只校验图片 hash 形态；向量里大量使用 `t-1`、`q-sync-1` 这类合成 id）。
 - **v1 现状（v2 变更）** 主机自己发起的任务，`task_id` 等于 `session_id`；v2 起两者独立生成，由 v1 兼容层映射。
 
 ### 1.4 未知与缺失字段
@@ -78,13 +80,14 @@
 | 规则 | 覆盖它的向量 |
 |---|---|
 | 错误体形状 + `retry_after_seconds` 为整秒 | `auth.ndjson` 19（429 + `^[0-9]+$`）、`images.ndjson` 12 |
-| 路径前缀 `/api/v1/…`、JSON 字段名 snake_case | 两个文件全部步骤的 `expect.json`（间接） |
+| 路径前缀 `/api/v1/…`、JSON 字段名 snake_case | 四组向量全部步骤的 `do`/`expect`（间接） |
+| op 载荷 `fields_json` 的键 = 列名 | `sync.ndjson` 5、7、12（`image_hash`、`question_count`、`answer_text`、`updated_by`） |
 | `image_hash` = 64 位小写十六进制、内容寻址 | `images.ndjson` 2（`^[0-9a-f]{64}$`）、4、5（`body_sha256` = `$hash`） |
 | `token` = 64 位小写十六进制 | `auth.ndjson` 5（`^[0-9a-f]{64}$`） |
 | 同状态码下 `code` 是唯一分支依据（`message` 可变） | `auth.ndjson` 2、3（缺 token 与 token 认不出同为 401 `unauthorized`，只有 message 不同） |
 | 未知字段被忽略 | **缺口**：向量格式没有「插入未知字段仍须成功」的操作 |
 | 大小写敏感（路径 / 字段名 / `Bearer` 拼写） | **缺口** |
-| 时间戳为毫秒 `*_at` | **缺口**（`tasks.ndjson`、`sync.ndjson` 待写） |
+| 时间戳为毫秒 `*_at` | **缺口**：四组向量都没对 `*_at` 字段做断言（`sync.ndjson` 只在 op 载荷里作为**输入**出现 `created_at`/`updated_at`） |
 
 ## 4. 文档-实现分叉
 

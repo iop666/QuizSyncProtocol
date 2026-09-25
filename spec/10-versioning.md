@@ -86,6 +86,7 @@
 | `/info` 自述 `protocol_version` = 1 | `auth.ndjson` 1 |
 | 配对响应带 `protocol_version` | `auth.ndjson` 5 |
 | 版本检查发生在鉴权之后、路由之前 | `auth.ndjson` 22（`/info` 无需鉴权仍 426）、2、3（缺/错 token 先回 401） |
+| 设备身份由 token 反查（`X-QS-Device-Id` 不是鉴权依据） | `sync.ndjson` 3、4（op 的 `device_id` 必须等于已认证设备，冒充被拒） |
 | 响应头 `X-QS-Server-Version` | **缺口**：向量断言表没有「响应头」断言 |
 | `/ws` 不协商版本 | **缺口**：`ws` 操作待实现 |
 | `X-QS-Protocol` / `/api/v2/*` | **缺口**：v2 向量未建 |

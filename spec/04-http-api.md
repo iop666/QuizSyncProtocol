@@ -1,6 +1,6 @@
 # 04 HTTP 接口
 
-> 状态：v1 现状（**按实现反推**——以当前 Windows 内置服务端的真实行为为准，与其旧契约文本冲突时以后者为准的说法**不成立**）+ v2 目标（凡标「v2 变更」的句子**均未实现**，只是方向）。
+> 状态：v1 现状（**按实现反推**：与旧契约文本冲突时，以实现为准）+ v2 目标（凡标「v2 变更」或「尚未实现」的句子**均未落地**，只是方向）。
 > 强制级别：**MUST**（两端已依赖、不得偏离）/ **SHOULD** / **MAY**。
 > 约定：正文只出现协议词汇与本地库的物理命名（`tasks`、`sync_ops`、`settings`、`deleted_at`、`local_path` 等），不出现任何一端的语言、框架、包名与仓库内路径。
 
@@ -13,11 +13,12 @@
 | 传输 | 单端口 HTTP/1.1；同端口 `/ws` 升级为 WebSocket（见 05 域）。端口默认 **8765**，被占用则依次试 **8766–8770**，实际端口由 `/api/v1/info` 与配对二维码给出 |
 | 前缀 | 所有 HTTP 端点以 `/api/v1/` 开头 |
 | 鉴权 | 除 `GET /api/v1/info` 与 `POST /api/v1/pair` 外，**MUST** 带 `Authorization: Bearer <token>`。缺失或认不出 → `401 unauthorized`；已吊销 → `401 revoked`。服务端只存 token 的 SHA-256 摘要（`devices.token_hash`），明文不落库 |
-| 版本协商 | 请求 **SHOULD** 带 `X-QS-Client-Version`（点号前第一段为主版本）。主版本与服务端不一致 → `426 version_mismatch`（body 给出双方版本）。**不带该头的请求一律放行**（现状，已被向量钉住）。所有响应带 `X-QS-Server-Version` |
+| 版本协商 | 请求 **SHOULD** 带 `X-QS-Client-Version`（点号前第一段为主版本）。主版本与服务端不一致 → `426 version_mismatch`（body 给出双方版本）。**空值/完全不带该头一律放行**；但**值不可解析**（例如 `abc`）等于主版本不一致，同样 `426`（现状，已被向量钉住）。所有响应带 `X-QS-Server-Version` |
 | 编码 | JSON 请求与响应 `application/json; charset=utf-8`；图片上传 `multipart/form-data`；图片下载原样字节 |
 | 错误体 | 恒为三键：`code`(str)、`message`(str)、`retry_after_seconds`(int｜null)。客户端 **MUST** 以 `code` 分支，**MUST NOT** 解析 `message` 文案 |
 | 未知字段 | 请求里认不出的键一律忽略；服务端不因未知字段报错 |
-| 数据隔离 | 现状**没有按设备隔离**：任何已配对设备都能读全库、给别人的图片与任务下单。仅两处例外：`POST /sync/ops` 的归属校验、`DELETE /devices/<id>` 的吊销 |
+| 未知路由 | 没匹配上任何端点 → `404`，但**不是**协议错误体（响应里没有 `code`）。客户端 **MUST NOT** 假设所有 404 都带 `code: not_found` |
+| 数据隔离 | 现状**没有按设备隔离**：任何已配对设备都能读全库、给别人的图片下单、看所有人的记录。唯一的额外约束是 `POST /sync/ops` 的归属校验（op 的 `device_id` 必须等于调用者）；`DELETE /devices/<id>` 反而**没有**任何归属或角色约束（见 1.3.16） |
 
 ### 1.2 端点总表（17 条，与实现的路由表逐条对应）
 
@@ -65,13 +66,13 @@
 - 鉴权：需。请求：`multipart/form-data`，唯一有效字段名 **`file`**（JPEG 字节）。存在多个 `file` part 时只处理**第一个**。
 - `200`：`image_hash`(str，64 位小写十六进制) / `size`(int，收到的字节数) / `mime`(str，**恒 `"image/jpeg"`**，不嗅探内容) / `width`(int｜null) / `height`(int｜null) / `existed`(bool)。
 - 错误：`400 invalid_request`（不是 multipart / 没有 `file` 字段 / 文件为空）、`413 payload_too_large`（单文件 > 2097152 字节）、`429 rate_limited`（带 `retry_after_seconds`）、`401`、`426`。
-- 体积判定：先按 `Content-Length` 做一次预检（超过 上限 + 64 KiB 直接 `413`，不读正文），分块传输时退化为**边收边计数**，一超限立刻 `413` 且不再继续读——**MUST NOT** 把整包读进内存再判大小。返回 4xx/413 前会尽量把已在路上的请求体吞掉（最多 300 毫秒），避免客户端拿到「连接被重置」而不是错误码。
+- 体积判定：先按 `Content-Length` 做一次预检（声明值 > 上限 + 64 KiB 时直接 `413`，不读正文），分块传输（无 `Content-Length`）时退化为**边收边计数**，一超限立刻 `413` 且不再继续读——**MUST NOT** 把整包读进内存再判大小。返回 4xx/413 前会尽量把已在路上的请求体吞掉（最多等 300 毫秒），避免客户端拿到「连接被重置」而不是错误码。
 - 幂等键：**内容的 sha256**。同一字节序列重复上传返回同一 `image_hash`、`existed: true`，不产生第二份文件；`existed` 反映的是 `images` 表里**是否已有该 hash 的行**（不是文件是否已存在）。
 - 现状：`width`/`height` 在本端点**从不计算**，只在「该 hash 已有带尺寸的行」时回填，首次上传恒为 `null`。`local_path` 被写成主机本地路径，且这一列**不参与同步**。
 - 计数：额度在其它校验**之前**扣（限流按调用设备每分钟 30 次），因此被 `413`/`400` 拒绝的请求同样消耗额度。
 
 #### 1.3.4 `GET /api/v1/images/<hash>`
-- 鉴权：需。`hash` **MUST** 是 64 位**小写**十六进制（`^[0-9a-f]{64}$`）；形态不符（含大写、含路径分隔符或 `..`）直接 `404 not_found`，**不做**路径拼接。这条形态校验是安全边界，**MUST NOT** 放宽。
+- 鉴权：需。`hash` **MUST** 是 64 位**小写**十六进制（`^[0-9a-f]{64}$`）；形态不符（含大写、含路径分隔符或 `..`）直接 `404 not_found`，**且不会去碰任何文件**。哈希会直接用作文件名，这条形态校验是安全边界，**MUST NOT** 放宽。
 - `200`：原始字节，`content-type: image/jpeg`（恒为此值）。文件不存在或读不出 → `404 not_found`。
 - 幂等：只读。无范围请求支持，不消耗上传额度。现状不按上传者隔离：任何已配对设备可读任意 hash。
 
@@ -89,7 +90,7 @@
 | `created_at` | int | 否 | — | **现状被完全忽略**（服务端用自己的时钟落库） |
 
 - 校验顺序（可依赖）：JSON → `task_id` 与页序非空 → 页数 ≤ 6（否则 `400 too_many_pages`）→ 每一页的 hash 必须已存在于 `images` 表（否则 `400 invalid_request`）→ 合集存在性（缺省与显式值都为空、或指向不存在/已删合集 → `409 no_active_collection`）→ 队列深度（`status = queued` 的行数 ≥ 20 → `429 queue_full`，带 `retry_after_seconds: 10`）。
-- `202`：`status`(str) / `session_id`(str｜null) / `question_count`(int｜null) / `cached`(bool)。`status` 取值 `queued`｜`analyzing`｜`done`｜`failed`｜`cancelled`。
+- `202`：`status`(str) / `session_id`(str｜null) / `question_count`(int｜null；新建任务是 `0`，命中复用时是既有题目数，会话不存在时为 `null`) / `cached`(bool)。`status` 取值 `queued`｜`analyzing`｜`done`｜`failed`｜`cancelled`。
 - **状态码恒为 `202`**：命中复用（`cached: true`）、重复 `task_id` 也都是 202，真实状态只在 `status` 字段里。
 - 幂等键：`task_id`。重复提交返回既有状态、不重复分析；若该任务仍是 `queued`/`analyzing`，会顺带再踢一次队列（关闭「入队后无人执行」的竞态）。
 - 结果复用（现状）：同一 `image_hash` 且有 `status = done` 的会话、页序与本次**逐位相同**、且非强制重跑 → 直接以该会话登记任务并返回 `status: done`、`cached: true`。候选会话只在**最近 500 条**里找，更旧的会话不会被复用。
@@ -98,7 +99,7 @@
 见 1.4.1（语义专章）。
 
 #### 1.3.7 `GET /api/v1/tasks/<taskId>`
-- 鉴权：需。只读、幂等（客户端可每 2 秒轮询）。
+- 鉴权：需。只读、幂等（**MAY** 在任务进行中按秒级间隔轮询）。
 - `200`：`task_id`(str) / `status`(str) / `session_id`(str｜null) / `error_code`(str｜null) / `error_message`(str｜null) / `session`(对象；**为空时整个键被省略**)。
 - `session` 只要会话行存在就带（不限 `done`），内容是会话全字段 + `image_hashes`(str[]) + `image_count`(int) + `questions`(对象数组)。
 - `error_message` 取自**会话行**的 `error_message`（不是任务行），会话不存在时恒为 `null`。
@@ -138,6 +139,7 @@
   3. `device_id` 不等于**调用者认证身份**：计入 `rejected`、不落库（防止设备间互相冒名）。
   4. `op_id` 已存在：按幂等忽略，且**不计入 `applied`**。
   5. 通过上述检查的 op 才落 `sync_ops` 并做字段级 LWW 落地；`applied` 只统计真正新写入的条数。
+- LWW 判定（**MUST**，细节见 06 域）：按**字段**比较写入时钟 `(lamport, device_id)`——`lamport` 大者胜，相等时 `device_id` **字典序大**者胜；落败的写入被跳过且不影响行级 `lamport`。墓碑与更新互相收敛：一行有墓碑时来一条**不含** `deleted_at` 的更晚写入，墓碑作废（删除输、行复活）。
 - 幂等键：`op_id`。重试 **MUST NOT** 更换 `op_id`。
 
 #### 1.3.13 `GET /api/v1/sync/ops`
@@ -171,7 +173,7 @@
 #### 1.4.1 `GET /api/v1/tasks/active`（只读探测 / 手机每秒轮询的兜底）
 - 语义：**只读快照**，回放主机**最近一次广播出去**的任务状态；不创建任务、不改业务数据（仅鉴权时刷新「最近活跃」时间）。客户端在前台默认**每秒**调一次，作为推送不可靠时的兜底。
 - 为什么必须单独存在：主机**本机截屏任务不经过任务队列**——`tasks` 表没有行，客户端拿不到它的 `task_id`，无法用 `GET /tasks/<id>` 取回结果。
-- `200` 响应字段（除 `session` 外**恒在**）：`status`(`idle`｜`queued`｜`analyzing`｜`done`｜`failed`) / `task_id`(str｜null) / `session_id`(str｜null) / `image_count`(int，缺省 `0`；上报值 ≤ 0 时用会话页数补齐) / `updated_at`(int 毫秒；主机记下这次状态的时刻，从未有过任务时为 `0`) / `message`(str｜null；仅 `failed` 有意义，取会话 `error_message`，缺省「分析失败」) / `active_collection_id`(str｜null) / `active_collection_name`(str｜null) / `collections`(对象数组) / `ops_lamport`(int) / `session`(对象；**仅** `status = done` 且会话存在且未删除时出现，否则键被省略)。
+- `200` 响应字段（除 `session` 外**恒在**）：`status`(`idle`｜`queued`｜`analyzing`｜`done`｜`failed`) / `task_id`(str｜null) / `session_id`(str｜null) / `image_count`(int，缺省 `0`；上报值 ≤ 0 时用会话页数补齐) / `updated_at`(int 毫秒；主机记下这次状态的时刻，从未有过任务时为 `0`) / `message`(str｜null；仅 `status = failed` 且有会话时才有值：取会话 `error_message`，其值为空时用「分析失败」；会话缺失或被删时为 `null`) / `active_collection_id`(str｜null) / `active_collection_name`(str｜null) / `collections`(对象数组) / `ops_lamport`(int) / `session`(对象；**仅** `status = done` 且会话存在且未删除时出现，否则键被省略)。
 - 状态是**内存态**：主机重启后回到 `idle`，不补发历史结果（与「WS 只补发进行中任务」一致）。
 - `session` 与 WS `task_result` 的 `session` **同构**，客户端可复用同一条落地逻辑。
 - `collections` = 主机**当前未删除**的合集列表，条目与 `GET /api/v1/collections` 同构。客户端 **SHOULD** 把它镜像进本地库，规则是**只增改、不删**：主机已删的合集不再出现在列表里，客户端**保留**本地那份；客户端本机已删的行也 **MUST NOT** 被复活。空数组 = 老主机没上报（客户端不动）。
@@ -188,7 +190,7 @@
 - `since_lamport` 是**排他下界**：返回 `lamport` **严格大于**它的 op。它是断点续拉的简写形式，分页时用 `cursor` 覆盖它。
 - 同一来源设备的 `lamport` 唯一且单调；跨设备不可比，也**MUST NOT** 混用一条游标。
 - 只传 `since_lamport` 而不传 `cursor` 时，页内每拉一页都要把 `cursor` 更新为上页的 `next_cursor`；拉完后客户端把游标推进到**已应用 op 的最大 `lamport`**（推进时机在落地成功之后，避免丢 op）。
-- 该端点**不返回** `has_more = false` 时的空页游标（`next_cursor: null`），客户端 **MUST** 用「已应用的最大值」或上一页的 `next_cursor` 作为下一次的 `since_lamport`。
+- 空页时 `next_cursor` 为 `null`：客户端此时 **MUST** 用「已应用 op 的最大 `lamport`」或上一页的 `next_cursor` 推进自己的 `since_lamport`，**MUST NOT** 把它重置为 `0`（那会从头重拉）。
 
 #### 1.4.4 `GET /api/v1/sync/snapshot` 的分页
 - 查询参数：`limit`(int，缺省 **200**，超出即 **clamp 到 1–1000**)、`offset`(int，缺省 **0**，clamp 到 0–2^30)。
@@ -215,7 +217,7 @@
 | 图片响应 `mime` | `image/jpeg`（恒定） | 不嗅探 |
 | `hash` 形态 | `^[0-9a-f]{64}$` | 大写视为不合形态 → 404 |
 | 上传限流 | 30 次/分钟/设备，窗口 60000 毫秒 | 失败请求同样计数 |
-| 任务页数上限 | 6（超出 `400 too_many_pages`） | 客户端本地默认同为 6 |
+| 任务页数上限 | 6（超出 `400 too_many_pages`） | 客户端本地设置默认同为 6，但那是本地设置、不是协商结果 |
 | 任务队列深度 | 20 行 `status = queued`（超出 `429 queue_full`，`retry_after_seconds: 10`） | |
 | 结果复用候选扫描 | 最近 500 条会话 | 更旧的会话不复用 |
 | `sync/ops` 页大小 | 500 条（可配置） | 多取 1 条判 `has_more` |
@@ -236,7 +238,7 @@
 | `auth.ndjson` 2–3 | 1.1 鉴权（缺 token / 认不出 → `401 unauthorized`） |
 | `auth.ndjson` 4–5 | 1.3.2（`invalid_code`、200 签发 64 位 hex） |
 | `auth.ndjson` 6、12 | 1.3.10（空库列表 + `active_collection_id`） |
-| `auth.ndjson` 7–8 | 1.3.2（`code_expired`、TTL 300001 毫秒） |
+| `auth.ndjson` 7–8 | 1.3.2（`code_expired`：向量把时钟推进 300001 毫秒越过 5 分钟 TTL） |
 | `auth.ndjson` 9 | 1.3.2（配对码刷新：主机侧动作，非 HTTP） |
 | `auth.ndjson` 10 | 1.3.2（409 仍给新 token + `already_paired: true`） |
 | `auth.ndjson` 11 | 1.3.2（重新配对后旧 token 立刻失效） |
@@ -246,14 +248,37 @@
 | `auth.ndjson` 22–23 | 1.1 版本协商（`426`；无版本头放行） |
 | `images.ndjson` 1 | 1.3.2 |
 | `images.ndjson` 2–3 | 1.3.3（`image_hash`/`size`/`mime`/`existed` 与内容寻址去重） |
-| `images.ndjson` 4–5 | 1.3.4（下载字节的 sha256 == `image_hash`；两步重复，见待确认） |
+| `images.ndjson` 4–5 | 1.3.4（下载字节的 sha256 == `image_hash`；这两步的 `do` 逐字相同，疑似向量笔误） |
 | `images.ndjson` 6–8 | 1.3.4（不存在 / 非 64 位小写 hex / 目录穿越 → `404 not_found`） |
 | `images.ndjson` 9 | 1.3.3（空文件 → `400 invalid_request`） |
 | `images.ndjson` 10 | 1.3.3（超限 → `413`；边收边判、不等整包） |
 | `images.ndjson` 11–12 | 1.3.3（30 次/分钟；第 31 次 → `429`） |
 | `images.ndjson` 13–14 | 1.1 鉴权（上传与下载都要 token） |
+| `tasks.ndjson` 3–5 | 1.3.5（`400`：缺 `task_id`、超 6 页、页图未上传） |
+| `tasks.ndjson` 7 | 1.3.5（`409 no_active_collection`：指定了不存在的合集） |
+| `tasks.ndjson` 8 | 1.3.5（`202` + `status: queued` + `question_count: 0` + `cached: false`） |
+| `tasks.ndjson` 9、12 | 1.3.7 / 1.4.2（`done` 的任务视图：题目数在 `session` 里；不存在的任务 `404`） |
+| `tasks.ndjson` 10–11 | 1.3.5（`task_id` 幂等、同图同页序复用且 `cached: true`，状态码仍是 `202`） |
+| `tasks.ndjson` 13 | 1.3.8（`retry` 对不存在的任务 `404`） |
+| `tasks.ndjson` 14–15 | 1.3.5（队列满 → `429 queue_full` + `retry_after_seconds`） |
+| `sync.ndjson` 2、6、17 | 1.4.4（快照的 `watermark`；只给活行，墓碑不出现在 `questions` 里） |
+| `sync.ndjson` 3–5 | 1.3.12（冒充主机的 op 静默跳过；冒名他人的 op 计入 `rejected`；本机 op `applied`） |
+| `sync.ndjson` 10、12 | 1.3.12（LWW：低 `lamport` 被挡；同 `lamport` 时 `device_id` 字典序大者胜） |
+| `sync.ndjson` 14 | 1.3.12（同 `op_id` 再投 → `applied: 0`） |
+| `sync.ndjson` 18–19 | 1.3.13 / 1.4.3（只返回该设备的 op、按 `lamport` 升序；空页 `next_cursor` 为 `null`） |
+| `sync.ndjson` 20 | 1.3.13（缺 `from_device` → `400 invalid_request`） |
+| `sync.ndjson` 28–30 | 1.4.4（`limit=1` → `has_more: true`、`next_offset: 1`；末页 `has_more: false`、`next_offset: null`；按 `created_at` 升序拼回） |
+| `errors.ndjson` 2–4 | 1.1 版本协商（同主版本放行；不同主版本 `426`；**不可解析的值也 `426`**） |
+| `errors.ndjson` 5–6 | 1.1 鉴权（空令牌、缺 `Bearer` 前缀 → `401 unauthorized`） |
+| `errors.ndjson` 7–9 | 1.3.12（非 JSON、缺 `ops`、body 是数组 → `400 invalid_request`） |
+| `errors.ndjson` 10–11 | 1.3.3 / 1.3.4（上传口收到 JSON → `400`；大写 hex 的下载 → `404`） |
+| `errors.ndjson` 12 | 1.3.15（`token_hash` 绝不出现在响应里） |
+| `errors.ndjson` 13 | 1.1 未知路由（普通 `404`，无协议错误体） |
+| `errors.ndjson` 14 | 1.3.11（不存在的合集 → `404 not_found`） |
 
-**未被任何向量覆盖（v1 缺口）**：`POST /tasks` 的全部错误分支与结果复用、`/tasks/active` 全字段、`/tasks/<id>` 的 done/failed、`/tasks/<id>/retry`、`/sessions/<id>/reanalyze`、`/collections/<id>/select`、`POST /sync/ops` 的归属校验、`GET /sync/ops` 的游标与分页、`/sync/snapshot` 的分页、`GET /devices`、`GET /ws` 握手。v2 **SHOULD** 至少补齐：任务幂等与缓存复用、`sync/ops` 游标续页、快照 `next_offset` 续页、`/tasks/active` 的 `idle` 与 `done` 两态。
+**仍未被任何向量覆盖（v1 缺口）**：`GET /api/v1/tasks/active`（全字段、`idle` 与 `done` 两态）完全没有向量；`POST /sessions/<id>/reanalyze` 完全没有向量；`POST /tasks/<id>/retry` 的**成功**路径（恒回 `{"status":"queued"}`、只对 `failed` 生效）只有 404 有；`POST /collections/<id>/select` 的成功路径（200 + `collection_changed` 广播）只有 404 有；`GET /collections` 的非空形态（条目字段）只有空库被覆盖；`GET /images/<hash>` 的 `width`/`height` 为 `null` 这一现状没有断言；`DELETE /devices/<id>` 对不存在 id 仍回 200 没有向量；缺 `file` 字段的上传（400）没有向量；`/ws` 握手（`401`、踢旧连接、`hello` 载荷）没有向量。v2 **SHOULD** 优先补：`/tasks/active` 两态、`reanalyze` 的成功与 404、`retry` 的成功路径、`collection_changed` 广播。
+
+> 撰写时的向量状态：`auth.ndjson`、`images.ndjson`、`tasks.ndjson`、`sync.ndjson` 已入库；`errors.ndjson` 当时还是未提交的工作副本（内容已按上表逐条核对过）。
 
 ## 4. 文档-实现分叉
 
@@ -275,4 +300,6 @@
 14. **WS 握手的 `X-QS-Device-Id`**：现契约把它列为握手头，实现的鉴权只看 `Authorization`，该头被忽略。→ 1.3.17
 15. **`GET /devices` 的定位**：现契约标注「仅 Windows 端设置页用」，实现只是一个普通的已鉴权端点（任何已配对设备可读）。→ 1.3.15
 16. **`DELETE /devices/<id>` 的权限与存在性**：现契约未写「任何已配对设备都能吊销任何设备」与「不存在的 id 也回 200」。→ 1.3.16
-17. **版本头缺失时的行为**：现契约未写「不带 `X-QS-Client-Version` 一律放行」（实现已固化，向量第 23 步钉住）。→ 1.1
+17. **版本头缺失与不可解析的差异**：现契约只写「主版本不一致返回 426」，没写「**空值/完全不带**该头一律放行」，也没写「**值不可解析**（如 `abc`）按不一致处理 → 426」。（实现已固化，`auth.ndjson` 第 23 步与 `errors.ndjson` 第 2–4 步钉住。）→ 1.1
+18. **未知路由的 404 不是协议错误体**：现契约的「错误响应统一格式」容易被读成所有错误都有 `code`，实现里没匹配上路由的 404 是普通响应体。→ 1.1
+19. **LWW 的同 `lamport` 定序未写**：现契约只写「字段级 LWW」，没写 `lamport` 相等时按 `device_id` 字典序定胜负，也没写「墓碑与更新互相收敛」这一半。→ 1.3.12
