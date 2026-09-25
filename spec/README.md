@@ -4,17 +4,17 @@
 
 | 文件 | 内容 | 状态 |
 |---|---|---|
-| `01-conventions.md` | 命名、时间（UTC 毫秒）、ID（UUIDv4）、未知字段处理、大小写与编码 | 待写 |
-| `02-transport.md` | 端口与端口探测范围、HTTP、WebSocket、明文（局域网不做 HTTPS）、编码、gzip、体积上限、超时 | 待写 |
-| `03-auth-pairing.md` | 配对码、二维码与配对链接、令牌、角色（Host / 客户端 / Provider）、吊销、限流、锁定、过期 | 待写 |
-| `04-http-api.md` | 端点逐条：方法、路径、角色要求、请求、响应、错误、幂等键 | 待写 |
-| `05-websocket.md` | 事件清单、信封、心跳、重连与退避、补偿（轮询兜底）、单设备踢旧 | 待写 |
-| `06-sync.md` | Lamport 时钟、逐字段 LWW、字段时钟、墓碑与回收、水位、快照 bootstrap | 待写 |
-| `07-images.md` | 上传、去重、命名、校验、分块（预留）、Provider 取图、剪枝 | 待写 |
-| `08-tasks.md` | 任务生命周期、幂等、结果复用规则、Provider 派发与离线语义 | 待写 |
-| `09-errors.md` | 错误码全表（code ↔ HTTP 状态 ↔ 是否可重试 ↔ `retry_after_seconds`） | 待写 |
-| `10-versioning.md` | 版本策略、兼容矩阵、废弃流程、旧版兼容层要求 | 待写 |
-| `11-capabilities.md` | 能力协商与降级（AI 是否已配置、是否支持多页、是否支持某事件…） | 待写 |
+| `01-conventions.md` | 命名、时间（UTC 毫秒）、ID（UUIDv4）、未知字段处理、大小写与编码 | 已就位（100 行） |
+| `02-transport.md` | 端口与端口探测范围、HTTP、WebSocket、明文（局域网不做 HTTPS）、编码、gzip、体积上限、超时 | 已就位（117 行） |
+| `03-auth-pairing.md` | 配对码、二维码与配对链接、令牌、角色（Host / 客户端 / Provider）、吊销、限流、锁定、过期 | 已就位（156 行） |
+| `04-http-api.md` | 端点逐条：方法、路径、角色要求、请求、响应、错误、幂等键 | 已就位（309 行） |
+| `05-websocket.md` | 事件清单、信封、心跳、重连与退避、补偿（轮询兜底）、单设备踢旧 | 已就位（131 行） |
+| `06-sync.md` | Lamport 时钟、逐字段 LWW、字段时钟、墓碑与回收、水位、快照 bootstrap | 已就位（140 行） |
+| `07-images.md` | 上传、去重、命名、校验、分块（预留）、Provider 取图、剪枝 | 已就位（117 行） |
+| `08-tasks.md` | 任务生命周期、幂等、结果复用规则、Provider 派发与离线语义 | 已就位（146 行） |
+| `09-errors.md` | 错误码全表（code ↔ HTTP 状态 ↔ 是否可重试 ↔ `retry_after_seconds`） | 已就位（176 行） |
+| `10-versioning.md` | 版本策略、兼容矩阵、废弃流程、旧版兼容层要求 | 已就位（103 行） |
+| `11-capabilities.md` | 能力协商与降级（AI 是否已配置、是否支持多页、是否支持某事件…） | 已就位（103 行） |
 
 ## 写作要求
 

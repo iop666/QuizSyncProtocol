@@ -124,6 +124,7 @@
 | `queue_full` | `tasks.ndjson` 15 |
 | `too_many_pages` | `tasks.ndjson` 4 |
 | `no_active_collection`（两种 message） | `tasks.ndjson` 7；auth/快照路径另见 `sync.ndjson` |
+| 无原图重跑 → `409 invalid_request` | `sync.ndjson` 31（`tasks.ndjson` 18 是 404 分支） |
 | `rate_limited` 的「失败次数过多已锁定」分支 | **缺口**（向量未走满 10 次失败） |
 | `invalid_request` 的各 message 分支 | `errors.ndjson` 7、8、9、10；`images.ndjson` 9 |
 | `internal` 兜底路径 | **缺口** |
@@ -135,7 +136,7 @@
 
 ### 7.1 两套 v1 Host 的错误码差异
 
-现状有**两个** Host 实现：Windows 客户端内嵌的、以及独立命令行服务端。协议子集相同，独立实现另有若干码与一处映射不同（下表为实测差异，不含上表已列的共同码）：
+现状有**两个** Host 实现：Windows 客户端内嵌的、以及独立命令行服务端。协议子集相同，独立实现另有若干码不同（下表为实测差异，不含上表已列的共同码；表中「重新识别时原图已不在主机上」一行是已在 v1 内收敛的历史差异）：
 
 | 场景 | 内嵌 Host | 独立服务端 | 处置 |
 |---|---|---|---|
@@ -143,7 +144,7 @@
 | 本机控制令牌缺失或错误 | 无 | `403 forbidden`（`缺少或错误的控制令牌`） | 同上 |
 | 该实例没有开放本机命令行 | 无 | `501 unavailable` | 同上 |
 | 本机命令行请求体形态不对 | 无 | `400 bad_request`（`请求体需要是 {"command": "..."}`） | 同上（注意：与 `invalid_request` 是两个码） |
-| 重新识别时原图已不在主机上 | `400 invalid_request`（`图片文件缺失`） | `409 invalid_request`（`原图已不在电脑上，无法重新识别`） | **v2 必须统一**（同场景同码同状态）；v1 客户端必须两种都认 |
+| 重新识别时原图已不在主机上 | `409 invalid_request`（`原图已不在电脑上，无法重新识别`） | `409 invalid_request`（`原图已不在电脑上，无法重新识别`） | **已统一（v1 内已收敛）**：两端同码同状态，`sync.ndjson` 31 钉住 |
 | 队列满的 message | `主机任务队列已满（N），请稍后重试` | `已有识别正在进行，请稍后重试` | message 非契约，客户端只按 `code` 分支 |
 
 **MUST**：客户端分支只看 `code`（不看 `message`、不看具体文案）。**MUST**：v1 期间的客户端必须同时接受上表两种取值 —— 现状 Android 端就是这么做的。

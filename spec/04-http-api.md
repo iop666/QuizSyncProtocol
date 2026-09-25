@@ -113,11 +113,11 @@
 
 #### 1.3.9 `POST /api/v1/sessions/<sessionId>/reanalyze`
 - 鉴权：需。无请求体。
-- `202`：`status`(str) / `session_id`(str，**新**会话) / `question_count` **恒 `null`** / `cached` **恒 `false`**。响应里**没有** `task_id`（新任务 id 由服务端生成且不回传——现状）。
+- `202`：`status`(str) / `session_id`(str，**新**会话) / `task_id`(str，**新**任务 id，UUID 形态；响应**包含 `task_id`**) / `question_count` **恒 `null`** / `cached` **恒 `false`**。`task_id` 由服务端生成并回传，客户端可直接用它轮询 `GET /tasks/<taskId>`（`tasks.ndjson` 16、17 钉住）。
 - 页序取自该会话的 `session_images`；没有页行时退回 `sessions.image_hash`。`source_device` = 调用者。
 - 强制重新调用分析（不复用缓存），因此每次调用都真实消耗一次分析额度并产生新会话。
 - `404 not_found`：会话不存在。**幂等：无**。
-- 未定义路径：会话行存在但既无页行又无 `image_hash` 时会走到未捕获异常（非 JSON 的 500）。客户端 **MUST NOT** 依赖该路径。
+- **已在 v1 拦住**：无页序行 / 首图 hash 为空 / 页图在 `images` 表无行 → `409 invalid_request`（`原图已不在电脑上，无法重新识别`），不再走未捕获异常的非协议 500（`sync.ndjson` 31 用「没有页序行」的会话钉住）。
 
 #### 1.3.10 `GET /api/v1/collections`
 - 鉴权：需。`200`：`collections`(对象数组) / `active_collection_id`(str｜null)。
@@ -248,7 +248,8 @@
 | `auth.ndjson` 22–23 | 1.1 版本协商（`426`；无版本头放行） |
 | `images.ndjson` 1 | 1.3.2 |
 | `images.ndjson` 2–3 | 1.3.3（`image_hash`/`size`/`mime`/`existed` 与内容寻址去重） |
-| `images.ndjson` 4–5 | 1.3.4（下载字节的 sha256 == `image_hash`；这两步的 `do` 逐字相同，疑似向量笔误） |
+| `images.ndjson` 4 | 1.3.4（下载字节的 sha256 == `image_hash`） |
+| `images.ndjson` 5 | 1.3.3（第三次上传同一张图 → 仍 `existed: true`；重复上传幂等） |
 | `images.ndjson` 6–8 | 1.3.4（不存在 / 非 64 位小写 hex / 目录穿越 → `404 not_found`） |
 | `images.ndjson` 9 | 1.3.3（空文件 → `400 invalid_request`） |
 | `images.ndjson` 10 | 1.3.3（超限 → `413`；边收边判、不等整包） |
@@ -261,6 +262,7 @@
 | `tasks.ndjson` 10–11 | 1.3.5（`task_id` 幂等、同图同页序复用且 `cached: true`，状态码仍是 `202`） |
 | `tasks.ndjson` 13 | 1.3.8（`retry` 对不存在的任务 `404`） |
 | `tasks.ndjson` 14–15 | 1.3.5（队列满 → `429 queue_full` + `retry_after_seconds`） |
+| `tasks.ndjson` 16–18 | 1.3.9（`reanalyze`：`202` + 新 `task_id` / 新 `session_id` / `question_count: null` / `cached: false`；重跑出的新任务可查到 `done`；不存在的会话 → `404`） |
 | `sync.ndjson` 2、6、17 | 1.4.4（快照的 `watermark`；只给活行，墓碑不出现在 `questions` 里） |
 | `sync.ndjson` 3–5 | 1.3.12（冒充主机的 op 静默跳过；冒名他人的 op 计入 `rejected`；本机 op `applied`） |
 | `sync.ndjson` 10、12 | 1.3.12（LWW：低 `lamport` 被挡；同 `lamport` 时 `device_id` 字典序大者胜） |
@@ -268,6 +270,8 @@
 | `sync.ndjson` 18–19 | 1.3.13 / 1.4.3（只返回该设备的 op、按 `lamport` 升序；空页 `next_cursor` 为 `null`） |
 | `sync.ndjson` 20 | 1.3.13（缺 `from_device` → `400 invalid_request`） |
 | `sync.ndjson` 28–30 | 1.4.4（`limit=1` → `has_more: true`、`next_offset: 1`；末页 `has_more: false`、`next_offset: null`；按 `created_at` 升序拼回） |
+| `sync.ndjson` 31 | 1.3.9（给没有页序行的会话重跑 → `409 invalid_request`；原「非协议 500」路径已在 v1 拦住） |
+| `sync.ndjson` 32 | 1.4.4（快照 `images` 不含 `local_path`，由 `json_absent` 钉住） |
 | `errors.ndjson` 2–4 | 1.1 版本协商（同主版本放行；不同主版本 `426`；**不可解析的值也 `426`**） |
 | `errors.ndjson` 5–6 | 1.1 鉴权（空令牌、缺 `Bearer` 前缀 → `401 unauthorized`） |
 | `errors.ndjson` 7–9 | 1.3.12（非 JSON、缺 `ops`、body 是数组 → `400 invalid_request`） |
@@ -276,7 +280,7 @@
 | `errors.ndjson` 13 | 1.1 未知路由（普通 `404`，无协议错误体） |
 | `errors.ndjson` 14 | 1.3.11（不存在的合集 → `404 not_found`） |
 
-**仍未被任何向量覆盖（v1 缺口）**：`GET /api/v1/tasks/active`（全字段、`idle` 与 `done` 两态）完全没有向量；`POST /sessions/<id>/reanalyze` 完全没有向量；`POST /tasks/<id>/retry` 的**成功**路径（恒回 `{"status":"queued"}`、只对 `failed` 生效）只有 404 有；`POST /collections/<id>/select` 的成功路径（200 + `collection_changed` 广播）只有 404 有；`GET /collections` 的非空形态（条目字段）只有空库被覆盖；`GET /images/<hash>` 的 `width`/`height` 为 `null` 这一现状没有断言；`DELETE /devices/<id>` 对不存在 id 仍回 200 没有向量；缺 `file` 字段的上传（400）没有向量；`/ws` 握手（`401`、踢旧连接、`hello` 载荷）没有向量。v2 **SHOULD** 优先补：`/tasks/active` 两态、`reanalyze` 的成功与 404、`retry` 的成功路径、`collection_changed` 广播。
+**仍未被任何向量覆盖（v1 缺口）**：`GET /api/v1/tasks/active`（全字段、`idle` 与 `done` 两态）完全没有向量；`POST /tasks/<id>/retry` 的**成功**路径（恒回 `{"status":"queued"}`、只对 `failed` 生效）只有 404 有；`POST /collections/<id>/select` 的成功路径（200 + `collection_changed` 广播）只有 404 有；`GET /collections` 的非空形态（条目字段）只有空库被覆盖；`GET /images/<hash>` 的 `width`/`height` 为 `null` 这一现状没有断言；`DELETE /devices/<id>` 对不存在 id 仍回 200 没有向量；缺 `file` 字段的上传（400）没有向量；`/ws` 握手（`401`、踢旧连接、`hello` 载荷）没有向量。`POST /sessions/<id>/reanalyze` **不在缺口里**：已由 `tasks.ndjson` 16、17、18 与 `sync.ndjson` 31 覆盖（见上表）。v2 **SHOULD** 优先补：`/tasks/active` 两态、`retry` 的成功路径、`collection_changed` 广播。
 
 > 撰写时的向量状态：`auth.ndjson`、`images.ndjson`、`tasks.ndjson`、`sync.ndjson` 已入库；`errors.ndjson` 当时还是未提交的工作副本（内容已按上表逐条核对过）。
 
@@ -293,7 +297,7 @@
 7. **「客户端限流」措辞**：现契约把上传限流写成客户端行为，实现是服务端按调用设备统计，且失败的请求同样消耗额度。→ 1.3.3
 8. **`GET /tasks/<id>` 的 `error_message` 来源**：现契约没说它取自会话行，也没说会话不存在时恒为 `null`。→ 1.3.7
 9. **`retry` 的响应与生效范围**：现契约没有 `POST /tasks/<id>/retry` 的响应体，实现恒回 `{"status":"queued"}` 且只对 `failed` 生效。→ 1.3.8
-10. **`reanalyze` 的恒定字段**：现契约说响应「与创建任务一致」，实现没有 `task_id`，且 `question_count` 恒 `null`、`cached` 恒 `false`。→ 1.3.9
+10. **`reanalyze` 的恒定字段**：现契约说响应「与创建任务一致」，实现回恒定 `status: queued`、`question_count` 恒 `null`、`cached` 恒 `false`，且 **v1 已补上 `task_id`**（原来不回传，客户端拿到的任务号是空串）。→ 1.3.9
 11. **`GET /sync/ops` 的游标**：现契约只写 `since_lamport` 与 `from_device`，实现还有 `cursor`（且覆盖 `since_lamport`）、页大小 500、`has_more`、`next_cursor`。→ 1.3.13
 12. **`/sync/snapshot` 的分页**：现契约只说「bootstrap 快照」，实现有 `limit`(默认 200/上限 1000)、`offset`、`has_more`、`next_offset`，且 `images`/`devices`/`collections` 全量、会话内嵌题目只含本页。→ 1.4.4
 13. **`POST /sync/ops` 的归属校验**：现契约只写「按 `op_id` 幂等」，实现还要求 `op.device_id` 等于调用者的认证身份（否则计入 `rejected`），并静默丢弃冒充主机的 op。这是安全收紧，文档缺失。→ 1.3.12

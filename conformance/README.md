@@ -10,8 +10,8 @@
 |---|---|---|
 | `vectors/auth.ndjson` | 鉴权：令牌缺失/错误/已吊销、配对码、限流、版本协商 | **23 步，已通过** |
 | `vectors/images.ndjson` | 上传与下载：去重、体积两阶段拒绝、频率限制、hash 白名单 | **14 步，已通过** |
-| `vectors/tasks.ndjson` | 任务：幂等创建、结果复用、页数上限、队列深度、失败语义 | **15 步，已通过** |
-| `vectors/sync.ndjson` | 同步：Lamport、逐字段 LWW、op 归属、墓碑、水位游标、快照分页 | **30 步，已通过** |
+| `vectors/tasks.ndjson` | 任务：幂等创建、结果复用、页数上限、队列深度、失败语义 | **18 步，已通过** |
+| `vectors/sync.ndjson` | 同步：Lamport、逐字段 LWW、op 归属、墓碑、水位游标、快照分页 | **32 步，已通过** |
 | `vectors/errors.ndjson` | 错误码与协商的边角：malformed 请求、空/畸形鉴权头、路由缺失、响应里不得出现令牌哈希 | **14 步，已通过** |
 | `vectors/websocket.ndjson` | WS：hello、事件、心跳、重连、踢旧 | **待写**（回放器的 `ws` 操作尚未实现） |
 

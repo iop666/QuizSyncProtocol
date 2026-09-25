@@ -27,3 +27,23 @@
 ## 发布
 
 冻结一个主版本 = 打 tag `vX.Y.0` + 在 `versions/CHANGELOG.md` 写明冻结范围与兼容矩阵 + 在 `versions/compat-matrix.md` 补上该版本的行。
+
+## CI 会检查什么
+
+`.github/workflows/ci.yml` 只做**数据自检**：不构建、不安装任何一端的实现（本仓库零依赖），全部逻辑在 `conformance/` 下的两个 Python 脚本里（只用标准库）。
+
+| 脚本 | 检查 |
+|---|---|
+| `conformance/check_vectors.py` | ① `conformance/vectors/*.ndjson` 一行一个 JSON 对象（可解析）；② `step` 从 1 起**连续**递增；③ 同一文件内 `step` **唯一**；④ 出现的 `$变量` 必须在同文件**更早**的步骤里被 `capture` 过，或属于内置变量（`pairingCode` / `port`） |
+| `conformance/check_language_neutral.py` | ⑤ `spec/`、`schema/`、`examples/` 下的 Markdown 不含实现绑定词汇：`dart` `flutter` `kotlin` `shelf` `drift` `dio` `riverpod` `pubspec` `quizsync_core` `quizsync_ui` `D:\ZCode` `packages/` `apps/`（大小写不敏感） |
+
+任一检查失败 = CI 红；两个 job 都是独立的，能一眼看出是向量写坏了还是规范里混进了实现词汇。
+
+本机自检（不需要装任何包）：
+
+```bash
+python conformance/check_vectors.py
+python conformance/check_language_neutral.py
+```
+
+⑤ 的匹配是**子串**级的：`studio` 会命中 `dio`、`apps/` 会命中路径片段。命中了先分辨是不是真的实现词汇，是就改写；不是就换个中立写法。SQLite 表名/列名、JSON 字段名、HTTP 头名、端口号、路由路径是**契约本身**，不在禁用范围内。

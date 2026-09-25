@@ -100,7 +100,7 @@
 
 ### 6.1 现状：WS 尚无向量
 
-- `conformance/vectors/` 目录里现有 **5 组**（`auth.ndjson` 23 步 / `images.ndjson` 14 步 / `tasks.ndjson` 15 步 / `sync.ndjson` 30 步 / `errors.ndjson` 14 步），**全部是 HTTP 步骤**：没有任何一步打 `/ws`，也没有 WS 操作类型。
+- `conformance/vectors/` 目录里现有 **5 组、共 101 步**（`auth.ndjson` 23 步 / `images.ndjson` 14 步 / `tasks.ndjson` 18 步 / `sync.ndjson` 32 步 / `errors.ndjson` 14 步），**全部是 HTTP 步骤**：没有任何一步打 `/ws`，也没有 WS 操作类型。
 - `conformance/README.md` 的组织表已给 `vectors/websocket.ndjson` 占位并标注「待写」（回放器的 `ws` 操作 `connect` / `expect` / `send` / `close` 均未实现）；该文件在目录里也**不存在**，所以 **MUST NOT** 据表认为 WS 已有覆盖。
 - 因此本文全部条目目前**只靠实现与集成测试保证**，没有语言无关的裁判。
 
