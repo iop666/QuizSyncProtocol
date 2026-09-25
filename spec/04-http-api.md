@@ -195,16 +195,16 @@
 #### 1.4.4 `GET /api/v1/sync/snapshot` 的分页
 - 查询参数：`limit`(int，缺省 **200**，超出即 **clamp 到 1–1000**)、`offset`(int，缺省 **0**，clamp 到 0–2^30)。
 - 分页对象：`sessions`（未删除行，按 `created_at ASC, session_id ASC` 稳定排序，**决定分页边界**）；`questions` 与 `session_images` 只含**本页涉及的会话**。
-- 不分页、每次都全量的三张表：`images`（全部元数据，**含 `local_path`**）、`devices`（全部，无 `token_hash`）、`collections`（未删除，最多 500 条）。
+- 不分页、每次都全量的三张表：`images`（全部元数据，**不含 `local_path`** —— 本地专属列不进同步载荷）、`devices`（全部，无 `token_hash`）、`collections`（未删除，最多 500 条）。
 - `200`：`sessions` / `questions` / `session_images` / `collections` / `images` / `devices` / `watermark`(int，主机 `MAX(lamport)`) / `has_more`(bool) / `next_offset`(int｜null，= `offset` + 本页会话数，`has_more = false` 时为 `null`)。
 - 客户端 **MUST** 用 `next_offset` 续拉，**MUST NOT** 自行 `offset += limit`（末页不足一页时会跳页）。
 - 幂等：只读。用途是新设备 bootstrap；响应里**不含 `sync_ops` 本身**，只有 `watermark` 水位。大库上全量字段（`images`/`devices`）会显著放大响应体积。
 
 #### 1.4.5 v2 目标（**变更**，尚未实现）
 1. `POST /tasks` 在主机未配置 AI 时**前置**拒绝（如 `503 ai_not_configured`），不再「先 202、再异步必失败」（见 11 域）。
-2. `POST /sessions/<id>/reanalyze` 的响应补 `task_id`，并把「会话无页序」定为协议错误（`400`/`409`），消除 500 路径。
+2. `POST /sessions/<id>/reanalyze` 的响应收敛到与 `POST /tasks` 同一形状（真实 `status`、`question_count`，而不是恒 `queued`/`null`）。**v1 已补**：响应带 `task_id`，「无原图」由 500 路径改为 `409 invalid_request`。
 3. `POST /tasks/<id>/retry` 返回任务**真实状态**，并对非 `failed` 的任务返回 `409 invalid_state`。
-4. `GET /sync/snapshot` 的 `images`/`devices`/`collections` 改为可增量（按水位）并可分页；`has_more` 覆盖全部集合；`local_path` 从同步载荷中剔除。
+4. `GET /sync/snapshot` 的 `images`/`devices`/`collections` 改为可增量（按水位）并可分页；`has_more` 覆盖全部集合。（`local_path` 已在 v1 从同步载荷剔除，见 §1.4.4。）
 5. `DELETE /devices/<id>` 对不存在的 id 返回 `404`，并引入角色校验（仅主机或该设备自己）。
 6. `GET /sync/ops` 的 `since_lamport` 与 `cursor` 收敛为单一游标参数。
 
