@@ -1,0 +1,54 @@
+name: CI（向量自检 + 规范语言中立）
+
+# 本仓库零依赖：CI 不构建、不安装任何一端的运行时，
+# 只用 Python 标准库做数据自检 —— 向量是语言无关的，检查也必须语言无关。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支/PR 的新推送取消旧运行
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vectors:
+    name: 一致性向量自检（NDJSON 结构 + 变量）
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # conformance/check_vectors.py 检查四件事，任一失败即整体失败：
+      #   ① NDJSON 可解析（一行一个 JSON 对象）
+      #   ② step 从 1 起连续递增
+      #   ③ 同一文件内 step 唯一
+      #   ④ $变量 必须在同文件更早的步骤里被 capture 过，或属于内置变量（pairingCode / port）
+      - name: 校验 vectors/*.ndjson
+        run: python conformance/check_vectors.py
+
+  neutral:
+    name: 规范语言中立（spec / schema / examples）
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # conformance/check_language_neutral.py 检查第五件事：
+      #   ⑤ spec / schema / examples 下的 Markdown 不得出现实现绑定词汇
+      #      dart|flutter|kotlin|shelf|drift|dio|riverpod|pubspec
+      #      |quizsync_core|quizsync_ui|D:\ZCode|packages/|apps/（大小写不敏感）
+      - name: 扫描实现绑定词汇
+        run: python conformance/check_language_neutral.py
