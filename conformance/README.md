@@ -13,7 +13,9 @@
 | `vectors/tasks.ndjson` | 任务：幂等创建、结果复用、页数上限、队列深度、失败语义 | **18 步，已通过** |
 | `vectors/sync.ndjson` | 同步：Lamport、逐字段 LWW、op 归属、墓碑、水位游标、快照分页 | **32 步，已通过** |
 | `vectors/errors.ndjson` | 错误码与协商的边角：malformed 请求、空/畸形鉴权头、路由缺失、响应里不得出现令牌哈希 | **14 步，已通过** |
-| `vectors/websocket.ndjson` | WS：hello、事件、心跳、重连、踢旧 | **待写**（回放器的 `ws` 操作尚未实现） |
+| `vectors/websocket.ndjson` | WS：hello、collection_changed、任务状态与结果、**负向断言**（不得发 `ops`）、device_revoked 与主动断连 | **19 步，已通过** |
+
+> 当前共 **6 组 120 步**，Dart 参考回放器与 C# 回放器都要全绿。
 
 一个文件 = 一个场景序列，**步骤在同一台服务端上按顺序执行**；回放器为**每个文件**起一套干净的服务端 + 客户端。
 
@@ -43,9 +45,13 @@
 | `auth` 取值 | `none`（不带 Authorization）/ `device`（默认 token）/ `device:<名字>`（capture 出来的命名 token）/ `bogus`（64 个 0）/ `empty`（`Bearer ` 空令牌）/ `malformed`（没有 Bearer 前缀） | 已实现 |
 | `{"clock": {"advance_ms": 300001}}` | 推进**回放器注入的时钟**（服务端通过 `now` 注入拿到它），用于配对码过期 / 限流窗口 / 锁定期 | 已实现 |
 | `{"server": {"refresh_pairing_code": true}}` | 调服务端刷新配对码（等价 UI 上的「刷新」，会重置有效期） | 已实现 |
+| `{"server": {"collection_changed": true}}` | 调服务端「合集已切换」的广播入口（桌面端切合集后走的就是它），用来驱动 `collection_changed` 事件 | 已实现 |
 | `{"seed": {"collection": {"id": "c1", "name": "期末复习"}, "active_collection": "c1", "queued_tasks": 20}}` | 回放器侧的初始状态：主机库里的合集、当前选中合集、已排队任务数（用来撞队列深度上限） | 已实现 |
 | `{"poll": {"method": "GET", "path": "/api/v1/tasks/t-1", "auth": "device", "until": {"status": "done"}, "max_ms": 20000, "interval_ms": 100}}` | 轮询只读端点直到 `until` 的局部匹配成立（或超时失败），随后按外层 `expect` 断言最后一次响应 | 已实现 |
-| `{"ws": {"connect": "device"}}`、`{"ws": {"expect": {…}}}`、`{"ws": {"send": {…}}}`、`{"ws": {"close": true}}` | WebSocket 连接 / 等一条事件 / 发一条消息 / 关闭 | **待实现** |
+| `{"ws": {"connect": "device"}}`、`{"ws": {"expect": {…}, "max_ms": 5000}}`、`{"ws": {"send": {…}}}`、`{"ws": {"close": true}}` | WebSocket：用当前 token 连接 `/ws`（`Authorization` 头）、等一条匹配的事件、发一条消息、客户端主动关闭 | 已实现 |
+| `{"ws": {"expect_none": {…}, "max_ms": 400}}`、`{"ws": {"expect_closed": true, "max_ms": 3000}}` | **负向断言**：窗口内不许出现匹配的事件（例：服务端从不发 `ops`）；服务端必须主动关闭连接（例：设备被吊销后） | 已实现 |
+
+> **WS 的收件箱语义**：到达的消息先进收件箱，`expect` 取**第一条匹配**的并丢掉它之前的消息 —— 顺序仍被钉住，但不必把每个中间态都写成一步（例如 `task_update` 的 `queued` 会被等 `analyzing` 的那一步跳过）。
 
 > **未实现的操作 = 回放失败**（不是跳过）：宁可红着，也不要假的绿。
 
