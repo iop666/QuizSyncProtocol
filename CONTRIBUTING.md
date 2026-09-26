@@ -35,7 +35,7 @@
 | 脚本 | 检查 |
 |---|---|
 | `conformance/check_vectors.py` | ① `conformance/vectors/*.ndjson` 一行一个 JSON 对象（可解析）；② `step` 从 1 起**连续**递增；③ 同一文件内 `step` **唯一**；④ 出现的 `$变量` 必须在同文件**更早**的步骤里被 `capture` 过，或属于内置变量（`pairingCode` / `port`） |
-| `conformance/check_language_neutral.py` | ⑤ `spec/`、`schema/`、`examples/` 下的 Markdown 不含实现绑定词汇：`dart` `flutter` `kotlin` `shelf` `drift` `dio` `riverpod` `pubspec` `quizsync_core` `quizsync_ui` `D:\ZCode` `packages/` `apps/`（大小写不敏感） |
+| `conformance/check_language_neutral.py` | ⑤ `spec/`、`schema/`、`examples/` 下的 Markdown 不含实现绑定词汇：`dart` `flutter` `kotlin` `shelf` `drift` `dio` `riverpod` `pubspec` `quizsync_core` `quizsync_ui` `packages/` `apps/`，以及**任何 Windows 盘符路径**（大小写不敏感） |
 
 任一检查失败 = CI 红；两个 job 都是独立的，能一眼看出是向量写坏了还是规范里混进了实现词汇。
 

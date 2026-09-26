@@ -34,7 +34,7 @@ Windows 是服务端，Android 是客户端。两端实现必须与本文件一�
 Windows 端生成：
 - `server_device_id`：UUID v4，首次启动时生成后持久化。
 - `pairing_code`：6 位数字，**有效期 5 分钟**；过期后 UI 上可一键刷新。
-- 二维码内容（UTF-8 文本）：
+- 二维码内容（UTF-8 文本，下面是一条示例）：
 
 ```
 quizsync://pair?host=192.168.1.23&port=8765&code=482913&sid=<server_device_id>&v=1

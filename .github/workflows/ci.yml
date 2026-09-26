@@ -49,6 +49,6 @@ jobs:
       # conformance/check_language_neutral.py 检查第五件事：
       #   ⑤ spec / schema / examples 下的 Markdown 不得出现实现绑定词汇
       #      dart|flutter|kotlin|shelf|drift|dio|riverpod|pubspec
-      #      |quizsync_core|quizsync_ui|D:\ZCode|packages/|apps/（大小写不敏感）
+      #      |quizsync_core|quizsync_ui|任何 Windows 盘符路径|packages/|apps/（大小写不敏感）
       - name: 扫描实现绑定词汇
         run: python conformance/check_language_neutral.py

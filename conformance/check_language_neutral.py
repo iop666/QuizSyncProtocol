@@ -6,7 +6,7 @@ CONTRIBUTING.md 的评审红线第 1 条：规范里不得出现任何一端的�
 命中即失败（退出码 1）。规则：大小写不敏感、按**子串**匹配——
 
     dart flutter kotlin shelf drift dio riverpod pubspec
-    quizsync_core quizsync_ui  [A-Za-z]:\\  packages/  apps/
+    quizsync_core quizsync_ui  packages/  apps/  以及任何 Windows 盘符路径
 
 注意子串匹配的副作用（命中后先分辨真假，不是真实现词汇就换个中立写法）；
 SQLite 表名 / 列名、JSON 字段名、HTTP 头名、端口号、路由路径是**契约本身**，
@@ -35,6 +35,7 @@ SCAN_DIRS = ("spec", "schema", "examples")
 SUFFIX = "*.md"
 
 # 禁用词汇（与 CONTRIBUTING.md 的评审红线一一对应）。
+# 最后一项是「任何 Windows 绝对路径」：规范里不该出现某一台机器的目录结构。
 PATTERN = re.compile(
     r"dart|flutter|kotlin|shelf|drift|dio|riverpod|pubspec"
     r"|quizsync_core|quizsync_ui"
